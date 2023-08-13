@@ -1,0 +1,111 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+contract KiraSozlesmesi {
+    address public kiraci;
+    address public evSahibi;
+
+    uint256 public kira;
+    uint256 public depozito;
+    
+    enum State {Active, Terminated}
+    State public state;
+
+    bool public kiraciViolation; 
+    bool public evSahibiRelocation; 
+
+    uint256 public kiraArtisOrani;
+    uint256 public sonKiraArtisTarihi;
+    uint256 public ilkOlusturmaTarihi=block.timestamp;
+    uint256 public yeniOdemeTarihi;
+    uint256 public aySayimi=1;
+    
+    constructor(address _kiraci, address _evSahibi, uint256 _kira, uint256 _depozito, uint256 _kiraArtisOrani) payable {
+        kiraci = _kiraci;
+        evSahibi = _evSahibi;
+        kira = _kira;
+        depozito = _depozito;
+        state = State.Active;
+        kiraciViolation = false;
+        evSahibiRelocation = false;
+        kiraArtisOrani=_kiraArtisOrani;
+
+        require(msg.sender == kiraci || msg.sender == evSahibi , "Yalnizca kiraci ya da ev sahibi sozlesmeyi olusturabilir");
+        require(msg.value == kira * 2 + depozito, "Sozlesme basladiginda kiraci ilk ayin ve ikinci ayin kirasini ve depozitoyu odemelidir. ");
+
+        payable(evSahibi).transfer(msg.value);
+
+        yeniOdemeTarihi= ilkOlusturmaTarihi;
+        sonKiraArtisTarihi=ilkOlusturmaTarihi;
+    }
+
+
+    function paykira() external payable { 
+        require(msg.sender == kiraci, "Yalnizca kiraci kirayi odeyebilir");
+        require(msg.value == kira, "Kiraci kira bedelini tam olarak odemelidir");
+        require(state == State.Active, "Sozlesme aktifligi");
+
+         // Ev sahibine ödemenin transfer edilmesi
+        payable(evSahibi).transfer(msg.value);
+        yeniOdemeTarihi = yeniOdemeTarihi + 30 days; 
+        aySayimi++;
+    }
+    
+    function terminateBykiraci() public payable {
+        require(msg.sender == kiraci, "Kiraci sozlesmeyi feshedebilir");
+        require(state == State.Active, "Sozlesme aktifligi.");
+        
+        state = State.Terminated;
+        
+        payable(kiraci).transfer(depozito + kira);
+    }
+
+    function terminateByevSahibiViolation(bool _kiraciViolation) public payable {
+        require(msg.sender == evSahibi, "Ev sahibi sozlesmeyi feshedebilr");
+        require(state == State.Active, "Sozlesme aktifligi");
+        
+        kiraciViolation = _kiraciViolation;
+
+        require(kiraciViolation, "Sozlesmeyi feshetmek icin olaganustu durum olusmalidir");
+        
+        state = State.Terminated;
+        
+        payable(kiraci).transfer(kira);
+    }
+
+    function terminateByevSahibiRelocation(bool _evSahibiRelocation) public payable {
+        require(msg.sender == evSahibi, "Ev sahibi sozlesmeyi feshedebilr");
+        require(state == State.Active, "Sozlesme aktifligi");
+
+        evSahibiRelocation = _evSahibiRelocation;
+
+        require(evSahibiRelocation, "Sozlesmeyi feshetmek icin olaganustu durum olusmalidir");
+ 
+        state = State.Terminated;
+
+        payable(kiraci).transfer(depozito + kira);
+    }
+    
+    function evSahibiIthar() external payable {
+        require(msg.sender == evSahibi, "Sadece ev sahibi ihtar cekebilir");
+        require(state == State.Active, "Kontrat aktifligi");
+
+        require(block.timestamp >= yeniOdemeTarihi + 30 days * 2 && msg.value < kira * 2, "Kiraci sonraki ayi odedi");
+ 
+        uint256 sonTarih = block.timestamp + 30 days;
+    
+        if (block.timestamp >= sonTarih && msg.value < kira) {
+            state = State.Terminated;
+            payable(kiraci).transfer(depozito + kira);
+        }
+    }
+
+    function setkiraArtisOrani() external {
+        require(msg.sender == evSahibi, "Yalniz ev sahibi kira artis oranini belirleyebilir");
+        require(state == State.Active, "Sozlesme aktif degil");    
+        require(yeniOdemeTarihi >= sonKiraArtisTarihi + 360 days, "Kira artisi her 12 ayda bir olacaktir");
+
+        sonKiraArtisTarihi=yeniOdemeTarihi;
+        kira = kira * (100 + kiraArtisOrani) / 100;
+    }
+}  
